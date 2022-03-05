@@ -15,7 +15,7 @@ WORKDIR /home/
 
 ENV RELEASE_TAG="1.65.0"
 ENV RELEASE_ORG="remonL"
-ENV VSCODE_ROOT="/home/${USER}/vscode-v${RELEASE_TAG}"
+ENV VSCODE_ROOT="/home/vscode-v${RELEASE_TAG}"
 
 # Downloading the latest VSC Server release and extracting the release archive
 RUN if [ -z "${RELEASE_TAG}" ]; then \
@@ -30,7 +30,6 @@ RUN if [ -z "${RELEASE_TAG}" ]; then \
     elif [ "${arch}" = "armv7l" ]; then \
         arch="armhf"; \
     fi && \
-    mkdir -p ${VSCODE_ROOT} && \
     wget https://github.com/${RELEASE_ORG}/vscode/releases/download/vscode-v${RELEASE_TAG}/vscode-v${RELEASE_TAG}-linux-${arch}.tar.gz && \
     tar -xzf vscode-v${RELEASE_TAG}-linux-${arch}.tar.gz && \
     mv -f vscode-v${RELEASE_TAG}-linux-${arch} ${VSCODE_ROOT} && \
