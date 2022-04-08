@@ -2,19 +2,28 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
+      commit:
+        description: 'Commit to release'
+        required: true
       quality:
         description: 'Quality'
+        required: true
         type: choice
         options:
         - insiders
         - stable
         default: stable
+      uploadRelease:
+        description: 'Create GitHub Release'
+        type: boolean
+        required: false
+        default: "true"
   workflow_run:
     workflows: ["Insiders"]
     types: [completed]
 
 env:
-  QUALITY: ${{ github.event.inputs.quality || 'stable' }}
+  QUALITY: ${{ github.event.inputs.quality || 'insiders' }}
   RELEASE_COMMIT: ${{ github.event.inputs.commit || 'main' }}
 
 jobs:
@@ -39,7 +48,7 @@ jobs:
           image: vscodium/vscodium-linux-build-agent:buster-arm64
 
     name: Build linux-${{ matrix.vscode_arch }}
-    if: github.event.workflow_run.conclusion == 'success'
+    if: github.event.inputs.commit || github.event.workflow_run.conclusion == 'success'
     steps:
 
       - uses: actions/checkout@v2
@@ -106,7 +115,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     name: Publish GitHub Release
-    if: github.event.workflow_run.conclusion == 'success'
+    if: github.event.inputs.uploadRelease == 'true' || github.event.workflow_run.conclusion == 'success'
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v2
