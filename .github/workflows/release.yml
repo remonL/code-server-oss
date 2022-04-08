@@ -1,0 +1,149 @@
+name: Release
+on:
+  workflow_dispatch:
+    inputs:
+      quality:
+        description: 'Quality'
+        type: choice
+        options:
+        - insiders
+        - stable
+        default: stable
+  workflow_run:
+    workflows: ["Insiders"]
+    types: [completed]
+
+env:
+  QUALITY: ${{ github.event.inputs.quality || 'stable' }}
+  RELEASE_COMMIT: ${{ github.event.inputs.commit || 'main' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.image }}
+      env:
+        OS_NAME: 'linux'
+        VSCODE_ARCH: ${{ matrix.vscode_arch }}
+
+    # support only linux for now
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - vscode_arch: x64
+          npm_arch: x64
+          image: vscodium/vscodium-linux-build-agent:bionic-x64
+        - vscode_arch: arm64
+          npm_arch: arm64
+          image: vscodium/vscodium-linux-build-agent:buster-arm64
+
+    name: Build linux-${{ matrix.vscode_arch }}
+    if: github.event.workflow_run.conclusion == 'success'
+    steps:
+
+      - uses: actions/checkout@v2
+        with:
+          repository: ${{ github.repository_owner }}/vscode
+          ref: ${{ env.RELEASE_COMMIT }}
+          path: vscode
+
+      - uses: actions/setup-node@v2
+        with:
+          node-version: 16
+
+      - name: Install Yarn
+        run: npm install -g yarn && node -v
+
+      - name: Execute yarn
+        working-directory: ./vscode
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+        run: |
+          set -e
+          export npm_config_arch=${{ matrix.npm_arch }}
+          
+          yarn --frozen-lockfile --network-timeout 180000
+      - name: Prepare for distribution
+        working-directory: ./vscode
+        run: yarn gulp vscode-reh-web-linux-${{ matrix.vscode_arch }}-min
+
+      - name: Download playwright
+        if: matrix.vscode_arch == 'x64'
+        working-directory: ./vscode
+        run: |
+          yarn playwright-install
+      - name: Compile test suites
+        if: matrix.vscode_arch == 'x64'
+        working-directory: ./vscode
+        run: |
+          set -e
+          yarn --cwd test/smoke compile
+          yarn --cwd test/integration/browser compile
+      - name: Bundle tarfile
+        run: |
+          set -e
+          version=$(node -p -e "require('./vscode/package.json').version")
+          quality_name=$([ "$QUALITY" = "insiders" ] && echo "-insiders" || echo "")
+          name="vscode${quality_name}-v${version}-linux-${{ matrix.vscode_arch }}"
+          mv vscode-reh-web-linux-${{ matrix.vscode_arch }} ${name}
+          tar -czf ${name}.tar.gz ${name}
+          echo "${version}" > __release_version.txt
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: linux-${{ matrix.vscode_arch }}
+          path: vscode-*.tar.gz
+      - name: Upload release version file
+        uses: actions/upload-artifact@v2
+        with:
+          name: release_version
+          path: __release_version.txt
+
+
+  upload:
+    needs: build
+    runs-on: ubuntu-latest
+    name: Publish GitHub Release
+    if: github.event.workflow_run.conclusion == 'success'
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v2
+        with:
+          path: artifacts/
+
+      - run: |
+          echo "VERSION=$(cat artifacts/release_version/__release_version.txt)" >> $GITHUB_ENV
+      - name: Create stable release
+        if: env.QUALITY == 'stable'
+        uses: softprops/action-gh-release@v1
+        with:
+          repository: ${{ github.repository_owner }}/vscode
+          target_commitish: ${{ env.RELEASE_COMMIT }}
+          body: vscode v${{ env.VERSION }}
+          tag_name: vscode-v${{ env.VERSION }}
+          files: artifacts/**/*.tar.gz
+
+      - name: Delete previous insiders release
+        if: env.QUALITY == 'insiders'
+        uses: dev-drprasad/delete-older-releases@v0.2.0
+        with:
+          repo: ${{ github.repository_owner }}/vscode
+          keep_latest: 0
+          delete_tags: true
+          delete_tag_pattern: vscode-insiders
+
+      - name: Sleep
+        if: env.QUALITY == 'insiders'
+        run: sleep 30s
+      - name: Create Insiders release
+        if: env.QUALITY == 'insiders'
+        uses: softprops/action-gh-release@v1
+        with:
+          repository: ${{ github.repository_owner }}/vscode
+          target_commitish: ${{ env.RELEASE_COMMIT }}
+          body: vscode Insiders v${{ env.VERSION }}
+          tag_name: vscode-insiders-v${{ env.VERSION }}
+          prerelease: true
+          files: artifacts/**/*.tar.gz
