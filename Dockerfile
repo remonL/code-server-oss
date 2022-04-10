@@ -8,12 +8,12 @@ ENV USER="vs"
 ENV DEBIAN_FRONTEND="noninteractive"
 ENV TZ=Asia/Shanghai
 RUN apt-get update \
-  && apt-get install --yes openjdk-8-jdk curl unzip sed git bash xz-utils  ssh  sudo wget sudo build-essential golang nodejs python3 zsh \
+  && apt-get install --yes openjdk-8-jdk curl unzip sed git bash xz-utils ssh sudo wget sudo build-essential golang nodejs python3 zsh \
   && rm -rf /var/lib/{apt,dpkg,cache,log}
 
 WORKDIR /home/
 
-ENV RELEASE_TAG="1.65.0"
+ARG RELEASE_TAG="1.65.0"
 ENV RELEASE_ORG="remonL"
 ENV VSCODE_ROOT="/home/vscode-v${RELEASE_TAG}"
 
